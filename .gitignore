@@ -4,3 +4,4 @@
 venv
 config.yml
 config-gov.yml
+.DS_Store
