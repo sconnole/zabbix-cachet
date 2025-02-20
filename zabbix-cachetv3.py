@@ -255,6 +255,8 @@ class Cachet:
             raise client_http_error(url, None, e)
         # r.raise_for_status()
         if r.status_code != 200:
+            print("response text =======================", r)
+            sys.exit(1)
             return client_http_error(url, r.status_code, json.loads(r.text)["errors"])
         try:
             r_json = json.loads(r.text)
@@ -521,15 +523,15 @@ class Cachet:
         params = {"visible": 1, "notify": "true"}
         url = "incidents"
         params.update(kwargs)
-        data = self._http_post(url, params)
+        response = self._http_post(url, params)
         logging.info(
             "Incident {name} (id={incident_id}) was created for component id {component_id}.".format(
                 name=params["name"],
-                incident_id=data["data"]["id"],
+                incident_id=response["data"].get("id"),
                 component_id=params["component_id"],
             )
         )
-        return data["data"]
+        return response["data"]
 
     def upd_incident(self, id, **kwargs):
         """
@@ -542,13 +544,13 @@ class Cachet:
         """
         url = "incidents/" + str(id)
         params = kwargs
-        data = self._http_put(url, params)
+        response = self._http_put(url, params)
         logging.info(
             "Incident ID {id} was updated. Status - {status}.".format(
-                id=id, status=data["data"]["human_status"]
+                id=id, status=response["data"]["human_status"]
             )
         )
-        return data
+        return response
 
 
 def triggers_watcher(service_map):
@@ -746,12 +748,14 @@ def init_cachet(services):
     @param services: list
     @return: list of tuples
     """
+
     data = []
     for zbx_service in services:
         if zbx_service.get("children"):
             data.extend(process_zbx_service_with_children(zbx_service))
         else:
             data.extend(process_zbx_service_without_children(zbx_service))
+
     return data
 
 
