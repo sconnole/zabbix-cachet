@@ -18,13 +18,13 @@ from operator import itemgetter
 import urllib3
 
 
-__author__ = 'Artem Alexandrov <qk4l()tem4uk.ru>'
+__author__ = "Artem Alexandrov <qk4l()tem4uk.ru>"
 __license__ = """The MIT License (MIT)"""
-__version__ = '1.3.7'
+__version__ = "1.3.7"
 
 
 def client_http_error(url, code, message):
-    logging.error('ClientHttpError[%s, %s: %s]' % (url, code, message))
+    logging.error("ClientHttpError[%s, %s: %s]" % (url, code, message))
 
 
 def cachetapiexception(message):
@@ -37,7 +37,7 @@ def pyzabbix_safe(fail_result=False):
             try:
                 return func(*args, **kwargs)
             except (requests.ConnectionError, ZabbixAPIException) as e:
-                logging.error('Zabbix Error: {}'.format(e))
+                logging.error("Zabbix Error: {}".format(e))
                 return fail_result
 
         return wrapperd_f
@@ -82,9 +82,8 @@ class Zabbix:
         @return: dict of data
         """
         trigger = self.zapi.trigger.get(
-            expandComment='true',
-            expandDescription='true',
-            triggerids=triggerid)
+            expandComment="true", expandDescription="true", triggerids=triggerid
+        )
         return trigger[0]
 
     @pyzabbix_safe({})
@@ -95,11 +94,12 @@ class Zabbix:
         @return: dict of data
         """
         zbx_event = self.zapi.event.get(
-            select_acknowledges='extend',
-            expandDescription='true',
+            select_acknowledges="extend",
+            expandDescription="true",
             object=0,
             value=1,
-            objectids=triggerid)
+            objectids=triggerid,
+        )
         if len(zbx_event) >= 1:
             return zbx_event[-1]
         return zbx_event
@@ -124,11 +124,12 @@ class Zabbix:
             logging.debug(f"Obtained root service: 1")
             root_service = self.zapi.service.get(
                 # selectDependencies='extend',
-                output='extend',
-                selectChildren='extend',
-                selectProblemTags='extend',
+                output="extend",
+                selectChildren="extend",
+                selectProblemTags="extend",
                 # selectParents='extend',
-                filter={'name': root})
+                filter={"name": root},
+            )
             logging.debug(f"Obtained root service: 2")
             try:
                 root_service = root_service[0]
@@ -137,44 +138,47 @@ class Zabbix:
                 logging.error('Can not find "{}" service in Zabbix'.format(root))
                 sys.exit(1)
             service_ids = []
-            for dependency in root_service['children']:
-                service_ids.append(dependency['serviceid'])
+            for dependency in root_service["children"]:
+                service_ids.append(dependency["serviceid"])
             services = self.zapi.service.get(
                 # selectDependencies='extend',
-                selectChildren='extend',
-                selectProblemTags='extend',
+                selectChildren="extend",
+                selectProblemTags="extend",
                 # selectParents='extend',
-                serviceids=service_ids)
+                serviceids=service_ids,
+            )
         else:
             services = self.zapi.service.get(
                 # selectDependencies='extend',
-                selectChildren='extend',
-                selectParents='extend',
-                selectProblemTags='extend',
-                output='extend')
+                selectChildren="extend",
+                selectParents="extend",
+                selectProblemTags="extend",
+                output="extend",
+            )
         if not services:
             logging.error('Can not find any child service for "{}"'.format(root))
             return []
         # Create a tree of services
         known_ids = []
         # At first proceed services with dependencies as groups
-        service_tree = [i for i in services if i['children']]
+        service_tree = [i for i in services if i["children"]]
         for idx, service in enumerate(service_tree):
             child_services_ids = []
-            for dependency in service['children']:
-                child_services_ids.append(dependency['serviceid'])
+            for dependency in service["children"]:
+                child_services_ids.append(dependency["serviceid"])
             child_services = self.zapi.service.get(
                 # selectDependencies='extend',
-                selectChildren='extend',
+                selectChildren="extend",
                 # selectParents='extend',
-                selectProblemTags='extend',
-                serviceids=child_services_ids)
-            service_tree[idx]['children'] = child_services
+                selectProblemTags="extend",
+                serviceids=child_services_ids,
+            )
+            service_tree[idx]["children"] = child_services
             # Save ids to filter them later
             known_ids = known_ids + child_services_ids
-            known_ids.append(service['serviceid'])
+            known_ids.append(service["serviceid"])
         # At proceed services without dependencies as singers
-        singers_services = [i for i in services if i['serviceid'] not in known_ids]
+        singers_services = [i for i in services if i["serviceid"] not in known_ids]
         if singers_services:
             service_tree = service_tree + singers_services
         return service_tree
@@ -188,9 +192,12 @@ class Cachet:
         :param token: string
         :return: object
         """
-        self.server = server + '/api/v1/'
+        self.server = server + "/api/"
         self.token = token
-        self.headers = {'X-Cachet-Token': self.token, 'Accept': 'application/json; indent=4'}
+        self.headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Accept": "application/json; indent=4",
+        }
         self.verify = verify
         self.version = self.get_version()
 
@@ -202,26 +209,27 @@ class Cachet:
         :return: json
         """
         url = self.server + url
-        logging.debug("Sending to {url}: {param}".format(url=url,
-                                                         param=json.dumps(params,
-                                                                          indent=4,
-                                                                          separators=(',', ': '))))
-        try:
-            r = requests.post(url=url, data=params, headers=self.headers, verify=self.verify)
-        except requests.exceptions.RequestException as e:
-            raise client_http_error(url, None, e)
-        # r.raise_for_status()
-        if r.status_code != 200:
-            return client_http_error(url, r.status_code, r.text)
-        try:
-            r_json = json.loads(r.text)
-        except ValueError:
-            raise cachetapiexception(
-                "Unable to parse json: %s" % r.text
+        payload = {"visible": True, "enabled": True, **params}
+        logging.debug(
+            "Sending to {url}: {payload}".format(
+                url=url, payload=json.dumps(payload, indent=4, separators=(",", ": "))
             )
-        logging.debug("Response Body: %s", json.dumps(r_json,
-                                                      indent=4,
-                                                      separators=(',', ': ')))
+        )
+        try:
+            response = requests.request("POST", url, json=payload, headers=self.headers)
+        except requests.exceptions.RequestException as err:
+            raise client_http_error(url, response.status_code, err)
+
+        if response.status_code not in [200, 201]:
+            return client_http_error(url, response.status_code, response.text)
+
+        try:
+            r_json = json.loads(response.text)
+        except ValueError:
+            raise cachetapiexception("Unable to parse json: %s" % r.text)
+        logging.debug(
+            "Response Body: %s", json.dumps(r_json, indent=4, separators=(",", ": "))
+        )
         return r_json
 
     def _http_get(self, url, params=None):
@@ -234,26 +242,27 @@ class Cachet:
         if params is None:
             params = {}
         url = self.server + url
-        logging.debug("Sending to {url}: {param}".format(url=url,
-                                                         param=json.dumps(params,
-                                                                          indent=4,
-                                                                          separators=(',', ': '))))
+        logging.debug(
+            "Sending to {url}: {param}".format(
+                url=url, param=json.dumps(params, indent=4, separators=(",", ": "))
+            )
+        )
         try:
-            r = requests.get(url=url, headers=self.headers, params=params, verify=self.verify)
+            r = requests.get(
+                url=url, headers=self.headers, params=params, verify=self.verify
+            )
         except requests.exceptions.RequestException as e:
             raise client_http_error(url, None, e)
         # r.raise_for_status()
         if r.status_code != 200:
-            return client_http_error(url, r.status_code, json.loads(r.text)['errors'])
+            return client_http_error(url, r.status_code, json.loads(r.text)["errors"])
         try:
             r_json = json.loads(r.text)
         except ValueError:
-            raise cachetapiexception(
-                "Unable to parse json: %s" % r.text
-            )
-        logging.debug("Response Body: %s", json.dumps(r_json,
-                                                      indent=4,
-                                                      separators=(',', ': ')))
+            raise cachetapiexception("Unable to parse json: %s" % r.text)
+        logging.debug(
+            "Response Body: %s", json.dumps(r_json, indent=4, separators=(",", ": "))
+        )
         return r_json
 
     def _http_put(self, url, params):
@@ -264,12 +273,15 @@ class Cachet:
         :return: json
         """
         url = self.server + url
-        logging.debug("Sending to {url}: {param}".format(url=url,
-                                                         param=json.dumps(params,
-                                                                          indent=4,
-                                                                          separators=(',', ': '))))
+        logging.debug(
+            "Sending to {url}: {param}".format(
+                url=url, param=json.dumps(params, indent=4, separators=(",", ": "))
+            )
+        )
         try:
-            r = requests.put(url=url, json=params, headers=self.headers, verify=self.verify)
+            r = requests.put(
+                url=url, json=params, headers=self.headers, verify=self.verify
+            )
         except requests.exceptions.RequestException as e:
             raise client_http_error(url, None, e)
         # r.raise_for_status()
@@ -278,12 +290,10 @@ class Cachet:
         try:
             r_json = json.loads(r.text)
         except ValueError:
-            raise cachetapiexception(
-                "Unable to parse json: %s" % r.text
-            )
-        logging.debug("Response Body: %s", json.dumps(r_json,
-                                                      indent=4,
-                                                      separators=(',', ': ')))
+            raise cachetapiexception("Unable to parse json: %s" % r.text)
+        logging.debug(
+            "Response Body: %s", json.dumps(r_json, indent=4, separators=(",", ": "))
+        )
         return r_json
 
     def get_version(self):
@@ -291,9 +301,9 @@ class Cachet:
         Get Cachet version for logging
         :return: str
         """
-        url = 'version'
+        url = "version"
         data = self._http_get(url)
-        return data['data']
+        return data["data"]
 
     def get_component(self, id):
         """
@@ -301,7 +311,7 @@ class Cachet:
         @param id: string
         @return: dict
         """
-        url = 'components/' + str(id)
+        url = "components/" + str(id)
         data = self._http_get(url)
         return data
 
@@ -314,24 +324,42 @@ class Cachet:
         :return: Data =)
         :rtype: dict or list
         """
-        url = 'components'
-        data = self._http_get(url)
-        total_pages = int(data['meta']['pagination']['total_pages'])
+        url = "components"
         if name:
-            components = []
-            for page in range(total_pages, 0, -1):
-                if page == 1:
-                    data_page = data
-                else:
-                    data_page = self._http_get(url, params={'page': page})
-                for component in data_page['data']:
-                    if component['name'] == name:
-                        components.append(component)
-            if len(components) < 1:
-                return {'id': 0, 'name': 'Does not exists'}
-            else:
-                return components
+            return self.find_component_by_name(name, url)
+
+        data = self._http_get(url)
         return data
+
+    def find_component_by_name(self, name, url):
+        """
+        Find a component by name from a paginated API.
+
+        Args:
+            name (str): The name of the group to search for.
+            url (str): The base URL for fetching paginated data.
+
+        Returns:
+            dict: The group data if found, otherwise a default "not found" response.
+        """
+        page = 1  # Start with the first page
+
+        while True:
+            # Fetch the current page data
+            response = self._http_get(url, params={"page": page, "include": "group"})
+
+            data = response.get("data", [])
+            meta = response.get("meta", {})
+            for component in data:
+                if component.get("attributes").get("name") == name:
+                    return component  # Return the group if found
+
+            if not data or "current_page" not in meta:
+                break  # Exit loop if no more pages
+
+            page += 1
+
+        return {"id": 0, "name": "Does not exist"}
 
     def new_components(self, name, **kwargs):
         """
@@ -341,32 +369,41 @@ class Cachet:
         @return: dict of data
         """
         # Get values for new component
-        params = {'name': name, 'link': '', 'description': '', 'status': '1', 'group_id': 0}
+        params = {
+            "name": name,
+            "link": "",
+            "description": "",
+            "status": 1,
+            "component_group_id": 0,
+        }
         params.update(kwargs)
-        # Do not post empty params to Cachet
-        for i in ('link', 'description'):
-            # Strip params to avoid empty (' ') values #24
-            if str(params[i]).strip() == '':
+        for i in ("link", "description"):
+            if str(params[i]).strip() == "":
                 params.pop(i)
-        # Check if components with same name already exists in same group
+
         component = self.get_components(name)
-        # There are more that one component with same name already
         if isinstance(component, list):
             for i in component:
-                if i['group_id'] == params['group_id']:
+                if i["component_group_id"] == params["component_group_id"]:
                     return i
         elif isinstance(component, dict):
-            if not component['id'] == 0 and component.get('group_id', None) == params['group_id']:
+            relationships = component.get("relationships")
+            group_id = 0
+            if relationships:
+                group = relationships.get("group")
+                if group:
+                    data = group.get("data")
+                    if data:
+                        group_id = data.get("id")
+            if not component["id"] == 0 and group_id == params["component_group_id"]:
                 return component
+
         # Create component if it does not exist or exist in other group
-        url = 'components'
-        # params = {'name': name, 'link': link, 'description': description, 'status': status}
-        logging.debug('Creating Cachet component {name}...'.format(name=params['name']))
+        url = "components"
+        logging.debug("Creating Cachet component {name}...".format(name=params["name"]))
+        params["componentGroupId"] = params["component_group_id"]
         data = self._http_post(url, params)
-        logging.info('Component {name} was created in group id {group_id}.'.format(name=params['name'],
-                                                                                   group_id=data['data'][
-                                                                                       'group_id']))
-        return data['data']
+        return data["data"]
 
     def upd_components(self, id, **kwargs):
         """
@@ -375,15 +412,16 @@ class Cachet:
         @param kwargs: various additional values =)
         @return: boolean
         """
-        url = 'components/' + str(id)
-        params = self.get_component(id)['data']
+        url = "components/" + str(id)
+        params = self.get_component(id)["data"]
         params.update(kwargs)
         data = self._http_put(url, params)
         if data:
-            logging.info('Component {name} (id={id}) was updated. Status - {status}'.format(
-                name=data['data']['name'],
-                id=id,
-                status=data['data']['status_name']))
+            logging.info(
+                "Component {name} (id={id}) was updated. Status - {status}".format(
+                    name=data["data"]["name"], id=id, status=data["data"]["status_name"]
+                )
+            )
         return data
 
     def get_components_gr(self, name=None):
@@ -393,20 +431,41 @@ class Cachet:
         @param name: string
         @return: dict of data
         """
-        url = 'components/groups'
+        url = "component-groups"
         data = self._http_get(url)
-        total_pages = int(data['meta']['pagination']['total_pages'])
         if name:
-            for page in range(total_pages, 0, -1):
-                if page == 1:
-                    data_page = data
-                else:
-                    data_page = self._http_get(url, params={'page': page})
-                for group in data_page['data']:
-                    if group['name'] == name:
-                        return group
-            return {'id': 0, 'name': 'Does not exists'}
+            return self.find_group_by_name(name, url)
         return data
+
+    def find_group_by_name(self, name, url):
+        """
+        Find a group by name from a paginated API.
+
+        Args:
+            name (str): The name of the group to search for.
+            url (str): The base URL for fetching paginated data.
+
+        Returns:
+            dict: The group data if found, otherwise a default "not found" response.
+        """
+        page = 1  # Start with the first page
+
+        while True:
+            response = self._http_get(url, params={"page": page})
+
+            data = response.get("data", [])
+            meta = response.get("meta", {})
+
+            for group in data:
+                if group.get("attributes").get("name") == name:
+                    return group
+
+            if not data or "current_page" not in meta:
+                break  # Exit loop if no more pages
+
+            page += 1
+
+        return {"id": 0, "name": "Does not exist"}
 
     def new_components_gr(self, name):
         """
@@ -416,17 +475,21 @@ class Cachet:
         """
         # Check if component's group already exists
         components_gr_id = self.get_components_gr(name)
-        if components_gr_id['id'] == 0:
-            url = 'components/groups'
-            # TODO: make if possible to configure default collapsed value
-            params = {'name': name, 'collapsed': 2}
-            logging.debug('Creating Component Group {}...'.format(params['name']))
+        if components_gr_id["id"] == 0:
+            url = "component-groups"
+            params = {"name": name, "collapsed": 2}
+            logging.debug("Creating Component Group {}...".format(params["name"]))
             data = self._http_post(url, params)
-            if data is not None and 'data' in data:
-                logging.info('Component Group {} was created ({})'.format(params['name'], data['data']['id']))
-            return data['data']
-        else:
-            return components_gr_id
+            if data is not None and "data" in data:
+                logging.info(
+                    "Component Group {} was created ({})".format(
+                        params["name"], data["data"]["id"]
+                    )
+                )
+
+            return data["data"]
+
+        return components_gr_id
 
     def get_incident(self, component_id):
         """
@@ -434,19 +497,18 @@ class Cachet:
         @param component_id: string
         @return: dict of data
         """
-        # TODO: make search by name
-        url = 'incidents'
+        url = "incidents"
         data = self._http_get(url)
-        total_pages = int(data['meta']['pagination']['total_pages'])
+        total_pages = int(data["meta"]["pagination"]["total_pages"])
         for page in range(total_pages, 0, -1):
-            data = self._http_get(url, params={'page': page})
-            data_sorted = sorted(data['data'], key=itemgetter('id'), reverse=True)
+            data = self._http_get(url, params={"page": page})
+            data_sorted = sorted(data["data"], key=itemgetter("id"), reverse=True)
             for incident in data_sorted:
-                if str(incident['component_id']) == str(component_id):
+                if str(incident["component_id"]) == str(component_id):
                     # Convert status to str
-                    incident['status'] = str(incident['status'])
+                    incident["status"] = str(incident["status"])
                     return incident
-        return {'id': '0', 'name': 'Does not exist', 'status': '-1'}
+        return {"id": "0", "name": "Does not exist", "status": "-1"}
 
     def new_incidents(self, **kwargs):
         """
@@ -456,15 +518,18 @@ class Cachet:
                         component_id, component_status
         @return: dict of data
         """
-        params = {'visible': 1, 'notify': 'true'}
-        url = 'incidents'
+        params = {"visible": 1, "notify": "true"}
+        url = "incidents"
         params.update(kwargs)
         data = self._http_post(url, params)
-        logging.info('Incident {name} (id={incident_id}) was created for component id {component_id}.'.format(
-            name=params['name'],
-            incident_id=data['data']['id'],
-            component_id=params['component_id']))
-        return data['data']
+        logging.info(
+            "Incident {name} (id={incident_id}) was created for component id {component_id}.".format(
+                name=params["name"],
+                incident_id=data["data"]["id"],
+                component_id=params["component_id"],
+            )
+        )
+        return data["data"]
 
     def upd_incident(self, id, **kwargs):
         """
@@ -475,11 +540,14 @@ class Cachet:
                 component_status
         @return: boolean
         """
-        url = 'incidents/' + str(id)
+        url = "incidents/" + str(id)
         params = kwargs
         data = self._http_put(url, params)
-        logging.info('Incident ID {id} was updated. Status - {status}.'.format(id=id,
-                                                                               status=data['data']['human_status']))
+        logging.info(
+            "Incident ID {id} was updated. Status - {status}.".format(
+                id=id, status=data["data"]["human_status"]
+            )
+        )
         return data
 
 
@@ -506,111 +574,136 @@ def triggers_watcher(service_map):
         # inc_status = 1
         # comp_status = 1
         # inc_name = ''
-        inc_msg = ''
+        inc_msg = ""
 
-        logging.debug('Object {}'.format(i))
+        logging.debug("Object {}".format(i))
 
-        if 'triggerid' in i:
-            trigger = zapi.get_trigger(i['triggerid'])
+        if "triggerid" in i:
+            trigger = zapi.get_trigger(i["triggerid"])
             # Check if Zabbix return trigger
-            if 'value' not in trigger:
-                logging.error('Cannot get value for trigger {}'.format(i['triggerid']))
+            if "value" not in trigger:
+                logging.error("Cannot get value for trigger {}".format(i["triggerid"]))
                 continue
             # Check if incident already registered
             # Trigger non Active
-            if str(trigger['value']) == '0':
-                component_status = cachet.get_component(i['component_id'])['data']['status']
-                # And component in operational mode
-                if str(component_status) == '1':
+            if str(trigger["value"]) == "0":
+
+                component = cachet.get_component(i["component_id"])
+                component_status = (
+                    component.get("data").get("attributes").get("status").get("value")
+                )
+
+                if str(component_status) == "1":
                     continue
-                else:
-                    # And component not operational mode
-                    last_inc = cachet.get_incident(i['component_id'])
-                    if str(last_inc['id']) != '0':
-                        if resolving_tmpl:
-                            inc_msg = resolving_tmpl.format(time=datetime.datetime.now(tz=tz).strftime('%b %d, %H:%M'),
-                                                            ) + cachet.get_incident(i['component_id'])['message']
-                        else:
-                            inc_msg = cachet.get_incident(i['component_id'])['message']
-                        cachet.upd_incident(last_inc['id'],
-                                            status=4,
-                                            component_id=i['component_id'],
-                                            component_status=1,
-                                            message=inc_msg)
-                    # Incident does not exist. Just change component status
+
+                last_inc = cachet.get_incident(i["component_id"])
+                if str(last_inc["id"]) != "0":
+                    if resolving_tmpl:
+                        inc_msg = (
+                            resolving_tmpl.format(
+                                time=datetime.datetime.now(tz=tz).strftime(
+                                    "%b %d, %H:%M"
+                                ),
+                            )
+                            + cachet.get_incident(i["component_id"])["message"]
+                        )
                     else:
-                        cachet.upd_components(i['component_id'], status=1)
-                    continue
-            # Trigger in Active state
-            elif trigger['value'] == '1':
-                zbx_event = zapi.get_event(i['triggerid'])
-                inc_name = trigger['description']
+                        inc_msg = cachet.get_incident(i["component_id"])["message"]
+                    cachet.upd_incident(
+                        last_inc["id"],
+                        status=4,
+                        component_id=i["component_id"],
+                        component_status=1,
+                        message=inc_msg,
+                    )
+                # Incident does not exist. Just change component status
+                else:
+                    cachet.upd_components(i["component_id"], status=1)
+                continue
+            if trigger["value"] == "1":
+                zbx_event = zapi.get_event(i["triggerid"])
+                inc_name = trigger["description"]
                 if not zbx_event:
-                    logging.warning('Failed to get zabbix event for trigger {}'.format(i['triggerid']))
+                    logging.warning(
+                        "Failed to get zabbix event for trigger {}".format(
+                            i["triggerid"]
+                        )
+                    )
                     # Mock zbx_event for further usage
-                    zbx_event = {'acknowledged': '0',
-                                 }
-                if zbx_event.get('acknowledged', '0') == '1':
+                    zbx_event = {
+                        "acknowledged": "0",
+                    }
+                if zbx_event.get("acknowledged", "0") == "1":
                     inc_status = 2
-                    for msg in zbx_event['acknowledges']:
+                    for msg in zbx_event["acknowledges"]:
                         # TODO: Add timezone?
                         #       Move format to config file
-                        author = msg.get('name', '') + ' ' + msg.get('surname', '')
-                        ack_time = datetime.datetime.fromtimestamp(int(msg['clock']), tz=tz).strftime('%b %d, %H:%M')
+                        author = msg.get("name", "") + " " + msg.get("surname", "")
+                        ack_time = datetime.datetime.fromtimestamp(
+                            int(msg["clock"]), tz=tz
+                        ).strftime("%b %d, %H:%M")
                         ack_msg = acknowledgement_tmpl.format(
-                            message=msg['message'],
-                            ack_time=ack_time,
-                            author=author
+                            message=msg["message"], ack_time=ack_time, author=author
                         )
                         if ack_msg not in inc_msg:
                             inc_msg = ack_msg + inc_msg
                 else:
                     inc_status = 1
-                if int(trigger['priority']) >= 4:
+                if int(trigger["priority"]) >= 4:
                     comp_status = 4
-                elif int(trigger['priority']) == 3:
+                elif int(trigger["priority"]) == 3:
                     comp_status = 3
                 else:
                     comp_status = 2
 
                 if not inc_msg and investigating_tmpl:
                     if zbx_event:
-                        zbx_event_clock = int(zbx_event.get('clock'))
-                        zbx_event_time = datetime.datetime.fromtimestamp(zbx_event_clock, tz=tz).strftime(
-                            '%b %d, %H:%M')
+                        zbx_event_clock = int(zbx_event.get("clock"))
+                        zbx_event_time = datetime.datetime.fromtimestamp(
+                            zbx_event_clock, tz=tz
+                        ).strftime("%b %d, %H:%M")
                     else:
-                        zbx_event_time = ''
+                        zbx_event_time = ""
                     inc_msg = investigating_tmpl.format(
-                        group=i.get('group_name', ''),
-                        component=i.get('component_name', ''),
+                        group=i.get("group_name", ""),
+                        component=i.get("component_name", ""),
                         time=zbx_event_time,
-                        trigger_description=trigger.get('comments', ''),
-                        trigger_name=trigger.get('description', ''),
+                        trigger_description=trigger.get("comments", ""),
+                        trigger_name=trigger.get("description", ""),
                     )
 
-                if not inc_msg and trigger.get('comments'):
-                    inc_msg = trigger.get('comments')
+                if not inc_msg and trigger.get("comments"):
+                    inc_msg = trigger.get("comments")
                 elif not inc_msg:
-                    inc_msg = trigger.get('description')
+                    inc_msg = trigger.get("description")
 
-                if 'group_name' in i:
-                    inc_name = i.get('group_name') + ' | ' + inc_name
+                if "group_name" in i:
+                    inc_name = i.get("group_name") + " | " + inc_name
 
-                last_inc = cachet.get_incident(i['component_id'])
+                last_inc = cachet.get_incident(i["component_id"])
                 # Incident not registered
-                if last_inc['status'] in ('-1', '4'):
+                if last_inc["status"] in ("-1", "4"):
                     # TODO: added incident_date
                     # incident_date = datetime.datetime.fromtimestamp(
                     # int(trigger['lastchange'])).strftime('%d/%m/%Y %H:%M')
-                    cachet.new_incidents(name=inc_name, message=inc_msg, status=inc_status,
-                                         component_id=i['component_id'], component_status=comp_status)
+                    cachet.new_incidents(
+                        name=inc_name,
+                        message=inc_msg,
+                        status=inc_status,
+                        component_id=i["component_id"],
+                        component_status=comp_status,
+                    )
 
                 # Incident already registered
-                elif last_inc['status'] not in ('-1', '4'):
+                elif last_inc["status"] not in ("-1", "4"):
                     # Only incident message can change. So check if this have happened
-                    if last_inc['message'].strip() != inc_msg.strip():
-                        cachet.upd_incident(last_inc['id'], message=inc_msg, status=inc_status,
-                                            component_status=comp_status)
+                    if last_inc["message"].strip() != inc_msg.strip():
+                        cachet.upd_incident(
+                            last_inc["id"],
+                            message=inc_msg,
+                            status=inc_status,
+                            component_status=comp_status,
+                        )
 
         else:
             # TODO: ServiceID
@@ -628,90 +721,192 @@ def triggers_watcher_worker(service_map, interval, event):
     @param event: treading.Event object
     @return:
     """
-    logging.info('Start trigger watcher....')
+    logging.info("Start trigger watcher....")
     while not event.is_set():
-        logging.debug('check Zabbix triggers')
+        logging.debug("check Zabbix triggers")
         # Do not run if Zabbix is not available
         if zapi.get_version():
             try:
                 triggers_watcher(service_map)
             except Exception as e:
-                logging.error('triggers_watcher() raised an Exception. Something gone wrong')
+                logging.error(
+                    "triggers_watcher() raised an Exception. Something gone wrong"
+                )
                 logging.error(e, exc_info=True)
         else:
-            logging.error('Zabbix is not available. Skip checking...')
+            logging.error("Zabbix is not available. Skip checking...")
         time.sleep(interval)
-    logging.info('end trigger watcher')
+    logging.info("end trigger watcher")
 
 
 def init_cachet(services):
     """
     Init Cachet by syncing Zabbix service to it
-    Also func create mapping batten Cachet components and Zabbix IT services
+    Also creates mapping between Cachet components and Zabbix IT services
     @param services: list
     @return: list of tuples
     """
-    # Zabbix Triggers to Cachet components id map
     data = []
     for zbx_service in services:
-        # Check if zbx_service has childes
-        zxb2cachet_i = {}
-        if zbx_service['children']:
-            group = cachet.new_components_gr(zbx_service['name'])
-            for dependency in zbx_service['children']:
-                # Component without trigger
-                logging.debug('dependency: %s', dependency)
-                if dependency.get('problem_tags') is not None and len(dependency.get('problem_tags')) > 0:
-                    for t in dependency.get('problem_tags'):
-                        if t.get('value'):
-                            trigger_id = str(t.get('value')).split(':')
-                            trigger = zapi.get_trigger(trigger_id[0])
-                            if not trigger:
-                                logging.error('Failed to get trigger {} from Zabbix'.format(dependency['triggerid']))
-                                continue
-                            component = cachet.new_components(dependency['name'], group_id=group['id'],
-                                                              link=trigger['url'], description=trigger['description'])
-                            zxb2cachet_i = {'triggerid': trigger_id}
-                elif dependency.get('triggerid'):
-                    trigger = zapi.get_trigger(dependency['triggerid'])
-                    if not trigger:
-                        logging.error('Failed to get trigger {} from Zabbix'.format(dependency['triggerid']))
-                        continue
-                    component = cachet.new_components(dependency['name'], group_id=group['id'],
-                                                      link=trigger['url'], description=trigger['description'])
-                    # Create a map of Zabbix Trigger <> Cachet IDs
-                    zxb2cachet_i = {'triggerid': dependency['triggerid']}
-                else:
-                    component = cachet.new_components(dependency['name'], group_id=group['id'])
-                    zxb2cachet_i = {'serviceid': dependency['serviceid']}
-                zxb2cachet_i.update({'group_id': group['id'],
-                                     'group_name': group['name'],
-                                     'component_id': component['id'],
-                                     'component_name': component['name']
-                                     })
-                data.append(zxb2cachet_i)
+        if zbx_service.get("children"):
+            data.extend(process_zbx_service_with_children(zbx_service))
         else:
-            # Component with trigger
-            if 'triggerid' in zbx_service:
-                if int(zbx_service['triggerid']) == 0:
-                    logging.error('Zabbix Service with service id = {} does '
-                                  'not have trigger or child service'.format(zbx_service['serviceid']))
-                    continue
-                trigger = zapi.get_trigger(zbx_service['triggerid'])
-                if not trigger:
-                    logging.error('Failed to get trigger {} from Zabbix'.format(zbx_service['triggerid']))
-                    continue
-                component = cachet.new_components(zbx_service['name'], link=trigger['url'],
-                                                  description=trigger['description'])
-                # Create a map of Zabbix Trigger <> Cachet IDs
-                zxb2cachet_i = {'triggerid': zbx_service['triggerid'],
-                                'component_id': component['id'],
-                                'component_name': component['name']}
-                data.append(zxb2cachet_i)
-            else:
-                logging.error("Service {} does not have associated triggerid, adjust Zabbix -> SLA Configuration".format(zbx_service['name']))
+            data.extend(process_zbx_service_without_children(zbx_service))
+    return data
+
+
+def process_zbx_service_with_children(zbx_service):
+    """
+    Process Zabbix service with children and create Cachet components for each dependency.
+    @param zbx_service: dict
+    @return: list of tuples
+    """
+    data = []
+    group = cachet.new_components_gr(zbx_service["name"])
+
+    for dependency in zbx_service["children"]:
+        logging.debug("dependency: %s", dependency)
+        zxb2cachet_i = {}
+        if dependency.get("problem_tags"):
+            zxb2cachet_i = process_dependency_with_problem_tags(dependency, group)
+        elif dependency.get("triggerid"):
+            zxb2cachet_i = process_dependency_with_triggerid(dependency, group)
+        else:
+            zxb2cachet_i = process_dependency_without_trigger(dependency, group)
+
+        logging.debug("group {}".format(group))
+        zxb2cachet_i.update(
+            {
+                "group_id": group["id"],
+                "group_name": group.get("attributes").get("name"),
+            }
+        )
+        data.append(zxb2cachet_i)
 
     return data
+
+
+def process_zbx_service_without_children(zbx_service):
+    """
+    Process Zabbix service without children and create Cachet components if a trigger exists.
+    @param zbx_service: dict
+    @return: list of tuples
+    """
+    data = []
+    if "triggerid" in zbx_service:
+        if int(zbx_service["triggerid"]) == 0:
+            logging.error(
+                "Zabbix Service with service id = {} does not have trigger or child service".format(
+                    zbx_service["serviceid"]
+                )
+            )
+            return data
+
+        trigger = zapi.get_trigger(zbx_service["triggerid"])
+        if not trigger:
+            logging.error(
+                "Failed to get trigger {} from Zabbix".format(zbx_service["triggerid"])
+            )
+            return data
+
+        component = cachet.new_components(
+            zbx_service["name"],
+            link=trigger["url"],
+            description=trigger["description"],
+        )
+        zxb2cachet_i = {
+            "triggerid": zbx_service["triggerid"],
+            "component_id": component["id"],
+            "component_name": component["name"],
+        }
+        data.append(zxb2cachet_i)
+    else:
+        logging.error(
+            "Service {} does not have associated triggerid, adjust Zabbix -> SLA Configuration".format(
+                zbx_service["name"]
+            )
+        )
+    return data
+
+
+def process_dependency_with_problem_tags(dependency, group):
+    """
+    Process a dependency with problem tags and create Cachet components.
+    @param dependency: dict
+    @param group: dict
+    @return: dict
+    """
+    for t in dependency.get("problem_tags"):
+        if t.get("value"):
+            trigger_id = str(t.get("value")).split(":")
+            trigger = zapi.get_trigger(trigger_id[0])
+            if not trigger:
+                logging.error(
+                    "Failed to get trigger {} from Zabbix".format(
+                        dependency["triggerid"]
+                    )
+                )
+                continue
+
+            component = cachet.new_components(
+                dependency["name"],
+                component_group_id=group["id"],
+                link=trigger["url"],
+                description=trigger["description"],
+            )
+            logging.debug("Created component {}".format(component))
+
+            return {
+                "triggerid": trigger_id,
+                "component_id": component["id"],
+                "component_name": component.get("attributes").get("name"),
+            }
+    return {}
+
+
+def process_dependency_with_triggerid(dependency, group):
+    """
+    Process a dependency with triggerid and create Cachet components.
+    @param dependency: dict
+    @param group: dict
+    @return: dict
+    """
+    trigger = zapi.get_trigger(dependency["triggerid"])
+    if not trigger:
+        logging.error(
+            "Failed to get trigger {} from Zabbix".format(dependency["triggerid"])
+        )
+        return {}
+
+    component = cachet.new_components(
+        dependency["name"],
+        component_group_id=group["id"],
+        link=trigger["url"],
+        description=trigger["description"],
+    )
+    logging.debug("Created component {}".format(component))
+    return {
+        "triggerid": dependency["triggerid"],
+        "component_id": component["id"],
+        "component_name": component.get("attributes").get("name"),
+    }
+
+
+def process_dependency_without_trigger(dependency, group):
+    """
+    Process a dependency without trigger and create Cachet components.
+    @param dependency: dict
+    @param group: dict
+    @return: dict
+    """
+    component = cachet.new_components(
+        dependency["name"], component_group_id=group["id"]
+    )
+    return {
+        "serviceid": dependency["serviceid"],
+        "component_id": component["id"],
+        "component_name": component["name"],
+    }
 
 
 def read_config(config_f):
@@ -723,96 +918,114 @@ def read_config(config_f):
     try:
         return yaml.safe_load(open(config_f, "r"))
     except (yaml.error.MarkedYAMLError, IOError) as e:
-        logging.error('Failed to parse config file {}: {}'.format(config_f, e))
+        logging.error("Failed to parse config file {}: {}".format(config_f, e))
     return None
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
-    if os.getenv('CONFIG_FILE') is not None:
-        CONFIG_F = os.environ['CONFIG_FILE']
+    if os.getenv("CONFIG_FILE") is not None:
+        CONFIG_F = os.environ["CONFIG_FILE"]
     else:
-        CONFIG_F = os.path.dirname(os.path.realpath(__file__)) + '/config.yml'
+        CONFIG_F = os.path.dirname(os.path.realpath(__file__)) + "/config.yml"
     config = read_config(CONFIG_F)
     if not config:
         sys.exit(1)
-    ZABBIX = config['zabbix']
-    CACHET = config['cachet']
-    SETTINGS = config['settings']
+    ZABBIX = config["zabbix"]
+    CACHET = config["cachet"]
+    SETTINGS = config["settings"]
 
-    if SETTINGS.get('time_zone'):
-        tz = pytz.timezone(SETTINGS['time_zone'])
+    if SETTINGS.get("time_zone"):
+        tz = pytz.timezone(SETTINGS["time_zone"])
     else:
         tz = None
 
     # Templates for incident displaying
     acknowledgement_tmpl_d = "{message}\n\n###### {ack_time} by {author}\n\n______\n"
-    templates = config.get('templates')
+    templates = config.get("templates")
     if templates:
-        acknowledgement_tmpl = templates.get('acknowledgement', acknowledgement_tmpl_d)
-        investigating_tmpl = templates.get('investigating', '')
-        resolving_tmpl = templates.get('resolving', '')
+        acknowledgement_tmpl = templates.get("acknowledgement", acknowledgement_tmpl_d)
+        investigating_tmpl = templates.get("investigating", "")
+        resolving_tmpl = templates.get("resolving", "")
     else:
         acknowledgement_tmpl = acknowledgement_tmpl_d
 
     exit_status = 0
     # Set Logging
-    log_level = logging.getLevelName(SETTINGS['log_level'])
-    log_level_requests = logging.getLevelName(SETTINGS['log_level_requests'])
-    logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
-                        datefmt='%Y-%m-%d:%H:%M:%S',
-                        level=log_level)
+    log_level = logging.getLevelName(SETTINGS["log_level"])
+    log_level_requests = logging.getLevelName(SETTINGS["log_level_requests"])
+    logging.basicConfig(
+        format="%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s",
+        datefmt="%Y-%m-%d:%H:%M:%S",
+        level=log_level,
+    )
     logging.getLogger("requests").setLevel(log_level_requests)
-    logging.info('Zabbix Cachet v.{} started (config: {})'.format(__version__, CONFIG_F))
+    logging.info(
+        "Zabbix Cachet v.{} started (config: {})".format(__version__, CONFIG_F)
+    )
     inc_update_t = threading.Thread()
     event = threading.Event()
     try:
-        if ZABBIX['https-verify'] is False:
+        if ZABBIX["https-verify"] is False:
             urllib3.disable_warnings()
 
-        zapi = Zabbix(ZABBIX['server'], ZABBIX['user'], ZABBIX['pass'], ZABBIX['https-verify'])
-        cachet = Cachet(CACHET['server'], CACHET['token'], CACHET['https-verify'])
-        logging.info('Zabbix ver: {}. Cachet ver: {}'.format(zapi.version, cachet.version))
-        zbxtr2cachet = ''
+        zapi = Zabbix(
+            ZABBIX["server"], ZABBIX["user"], ZABBIX["pass"], ZABBIX["https-verify"]
+        )
+        cachet = Cachet(CACHET["server"], CACHET["token"], CACHET["https-verify"])
+        logging.info(
+            "Zabbix ver: {}. Cachet ver: {}".format(zapi.version, cachet.version)
+        )
+        zbxtr2cachet = ""
         while True:
-            logging.debug('Getting list of Zabbix IT Services ...')
-            itservices = (zapi.get_itservices(SETTINGS['root_service']))
-            logging.debug('Zabbix IT Services: {}'.format(itservices))
+            logging.debug("Getting list of Zabbix IT Services ...")
+            itservices = zapi.get_itservices(SETTINGS["root_service"])
+            logging.debug("Zabbix IT Services: {}".format(itservices))
             # Create Cachet components and components groups
-            logging.debug('Syncing Zabbix with Cachet...')
+            logging.debug("Syncing Zabbix with Cachet...")
             zbxtr2cachet_new = init_cachet(itservices)
             if not zbxtr2cachet_new:
-                logging.error('Sorry, can not create Zabbix <> Cachet mapping for you. Please check above errors')
+                logging.error(
+                    "Sorry, can not create Zabbix <> Cachet mapping for you. Please check above errors"
+                )
                 # Exit if it's a initial run
                 if not zbxtr2cachet:
                     sys.exit(1)
                 else:
                     zbxtr2cachet_new = zbxtr2cachet
             else:
-                logging.info('Successfully synced Cachet components with Zabbix Services')
+                logging.info(
+                    "Successfully synced Cachet components with Zabbix Services"
+                )
             # Restart triggers_watcher_worker
             if zbxtr2cachet != zbxtr2cachet_new:
                 zbxtr2cachet = zbxtr2cachet_new
-                logging.info('Restart triggers_watcher worker')
-                logging.debug('List of watching triggers {}'.format(str(zbxtr2cachet)))
+                logging.info("Restart triggers_watcher worker")
+                logging.debug("List of watching triggers {}".format(str(zbxtr2cachet)))
                 event.set()
                 # Wait until tread die
                 while inc_update_t.is_alive():
                     time.sleep(1)
                 event.clear()
-                inc_update_t = threading.Thread(name='Trigger Watcher',
-                                                target=triggers_watcher_worker,
-                                                args=(zbxtr2cachet, SETTINGS['update_inc_interval'], event))
+                inc_update_t = threading.Thread(
+                    name="Trigger Watcher",
+                    target=triggers_watcher_worker,
+                    args=(zbxtr2cachet, SETTINGS["update_inc_interval"], event),
+                )
                 inc_update_t.daemon = True
                 inc_update_t.start()
-            time.sleep(SETTINGS['update_comp_interval'])
+            time.sleep(SETTINGS["update_comp_interval"])
 
     except KeyboardInterrupt:
         event.set()
-        logging.info('Shutdown requested. See you.')
+        logging.info("Shutdown requested. See you.")
     except Exception as e:
         logging.error(e)
-        logging.error("@@@@ Thread Exception: {}, {}, {}".format(e, e.with_traceback, traceback.print_exc()))
+        logging.error(
+            "@@@@ Thread Exception: {}, {}, {}".format(
+                e, e.with_traceback, traceback.print_exc()
+            )
+        )
 
         exit_status = 1
     sys.exit(exit_status)
