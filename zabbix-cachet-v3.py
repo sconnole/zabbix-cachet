@@ -23,6 +23,8 @@ __author__ = "Artem Alexandrov <qk4l()tem4uk.ru>"
 __license__ = """The MIT License (MIT)"""
 __version__ = "1.3.7"
 
+os.environ["REQUESTS_CA_BUNDLE"] = "/etc/ssl/certs/ca-certificates.crt"
+
 
 class CachetComponentStatus(Enum):
     OPERATIONAL = 1
@@ -420,7 +422,6 @@ class Cachet:
             "status": 1,
             "component_group_id": 0,
         }
-        logging.debug(params)
         params.update(kwargs)
         for i in ("link", "description"):
             if str(params[i]).strip() == "":
@@ -461,7 +462,6 @@ class Cachet:
         params = self.get_component(id)["data"]
         params.update(kwargs)
         data = self._http_put(url, params)
-        logging.info(data)
         if data:
             logging.info(
                 "Component {name} (id={id}) was updated. Status - {status}".format(
@@ -586,7 +586,6 @@ class Cachet:
         params = {"visible": 1, "notify": "true"}
         url = "incidents"
         params.update(kwargs)
-        logging.info("Object {}".format(params))
 
         response = self._http_post(url, params)
         logging.info(
@@ -658,7 +657,6 @@ def triggers_watcher(service_map):
 
         if "triggerid" in i:
             trigger = zapi.get_trigger(i["triggerid"])
-            logging.debug("Object {}".format(trigger))
             # Check if Zabbix return trigger
             if "value" not in trigger:
                 logging.error("Cannot get value for trigger {}".format(i["triggerid"]))
